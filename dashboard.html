@@ -1,0 +1,1255 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hopper Thruster Stand</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!--
+  Standalone dashboard. Open in a browser (file:// is fine) and set the API
+  box to the board's address (default http://192.168.137.50). The ESP32 only
+  serves JSON; edit and reload this file freely, no reflashing.
+
+  Calibration sessions autosave to this browser's localStorage and can be
+  exported / imported as JSON, so a session can be handed to someone else.
+-->
+<style>
+  *{box-sizing:border-box}
+  :root{
+    --void:#05070a; --bg:#080b10; --panel:#0c1117; --panel2:#111922; --raise:#16202b;
+    --line:#1b2530; --line2:#27354a;
+    --fg:#dde4ec; --mut:#7a8999; --dim:#4a5767;
+    --ice:#7cd4ff; --ice-d:#12384d; --ice-g:rgba(124,212,255,.14);
+    --gold:#f0b44c; --gold-d:#4d3810; --gold-g:rgba(240,180,76,.14);
+    --red:#ff5c4d; --red-d:#4a1814; --ok:#5fe3a1; --ok-d:#123826;
+    --disp:'Barlow Condensed','Bahnschrift','Arial Narrow',ui-sans-serif,system-ui,sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,'Cascadia Mono',Consolas,monospace;
+  }
+  html,body{height:100%;background:var(--void);color:var(--fg)}
+  body{margin:0;font:13px/1.4 var(--mono);overflow:hidden;
+    background:radial-gradient(1200px 600px at 70% -10%,#0d1622 0%,transparent 60%),var(--void)}
+  .app{height:100%;display:flex;flex-direction:column;gap:10px;padding:10px}
+  .sp{flex:1}
+  .mut{color:var(--mut)} .small{font-size:11px}
+  button,input,select{font:inherit;color:inherit}
+  :focus-visible{outline:2px solid var(--ice);outline-offset:2px}
+
+  /* ---------- shared pieces ---------- */
+  .eyebrow{font:600 11px/1 var(--disp);letter-spacing:.2em;text-transform:uppercase;color:var(--mut)}
+  .panel{position:relative;background:linear-gradient(180deg,var(--panel2),var(--panel) 40%);
+    border:1px solid var(--line);border-radius:3px;padding:12px 14px;min-height:0}
+  /* registration ticks on the corners - drawn, not decoration: they frame each instrument */
+  .panel::before,.panel::after{content:"";position:absolute;width:9px;height:9px;pointer-events:none;border:1px solid var(--line2)}
+  .panel::before{top:-1px;left:-1px;border-right:0;border-bottom:0}
+  .panel::after{bottom:-1px;right:-1px;border-left:0;border-top:0}
+
+  button{padding:7px 12px;border-radius:2px;border:1px solid var(--line2);background:var(--raise);
+    cursor:pointer;white-space:nowrap;font-family:var(--disp);font-weight:600;font-size:13px;letter-spacing:.12em;text-transform:uppercase;
+    transition:background .12s,border-color .12s,transform .06s}
+  button:hover:not(:disabled){border-color:var(--mut);background:#1b2836}
+  button:active:not(:disabled){transform:translateY(1px)}
+  button:disabled{opacity:.3;cursor:not-allowed}
+  button.pri{background:var(--ice);border-color:var(--ice);color:#04141d}
+  button.pri:hover:not(:disabled){background:#9ae0ff;border-color:#9ae0ff}
+  button.ghost{background:transparent;border-color:var(--line2);color:var(--mut)}
+  button.ghost:hover:not(:disabled){color:var(--fg)}
+  button.mini{padding:4px 8px;font-size:11px}
+  button.icon{padding:3px 7px;font-size:15px;line-height:1;letter-spacing:0;background:transparent;border-color:transparent;color:var(--dim)}
+  button.icon:hover:not(:disabled){color:var(--fg);background:var(--raise);border-color:var(--line2)}
+  button.icon.danger:hover:not(:disabled){color:var(--red)}
+  input,select{background:#0a0f15;border:1px solid var(--line2);border-radius:2px;padding:5px 8px;color:var(--fg);min-width:0}
+  input:hover,select:hover{border-color:#37506b}
+  input::placeholder{color:var(--dim)}
+  input[type=number]{-moz-appearance:textfield;appearance:textfield;font-variant-numeric:tabular-nums}
+  input[type=number]::-webkit-inner-spin-button{display:none}
+  input[type=checkbox]{accent-color:var(--ice)}
+  label{display:inline-flex;gap:6px;align-items:center;color:var(--mut)}
+
+  /* ---------- top bar ---------- */
+  .topbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:10px}
+  .conn{width:9px;height:9px;border-radius:50%;background:var(--red);box-shadow:0 0 0 3px var(--red-d)}
+  .conn.ok{background:var(--ok);box-shadow:0 0 0 3px var(--ok-d)}
+  .brand b{font:700 24px/1 var(--disp);letter-spacing:.28em}
+  .brand span.sub{font:500 11px/1 var(--disp);letter-spacing:.2em;color:var(--mut);text-transform:uppercase;padding-left:10px;border-left:1px solid var(--line2)}
+  .sessname{width:200px;font:600 15px var(--disp);letter-spacing:.08em;background:transparent;border-color:transparent;border-bottom-color:var(--line2);border-radius:0;padding:3px 2px}
+  .sessname:hover,.sessname:focus{border-color:transparent;border-bottom-color:var(--ice);background:transparent}
+  @media(max-width:1640px){.brand span.sub{display:none}}
+  .save-state{font-size:11px;color:var(--dim);min-width:104px}
+  .save-state.ok::before{content:"● ";color:var(--ok)}
+  .save-state.bad{color:var(--red)}
+  .clock{display:flex;align-items:center;gap:8px;padding:3px 4px 3px 12px;border:1px solid var(--line2);border-radius:2px;background:#0a0f15}
+  .clock .t{font:600 17px/1 var(--mono);letter-spacing:.04em;color:var(--dim);font-variant-numeric:tabular-nums}
+  .clock.run .t{color:var(--gold)}
+  .apiwrap{display:flex;gap:6px;align-items:center}
+  .apiwrap input{width:158px}
+
+  /* ---------- main grid ---------- */
+  .main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) clamp(430px,31vw,560px);gap:10px}
+  .calcol{display:flex;flex-direction:column;gap:10px;min-height:0}
+  .sidecol{display:flex;flex-direction:column;gap:10px;min-height:0}
+  .sidecol>.panel{flex:1 1 0;min-height:0;display:flex;flex-direction:column}
+  .sidecol>.panel.fitpanel{flex-grow:1.5}
+
+  /* ---------- flight-plan timeline (the signature) ---------- */
+  .plan{display:flex;align-items:center;gap:18px;padding:10px 14px}
+  .plan-l{display:flex;flex-direction:column;gap:6px;min-width:190px}
+  .plan-l .row{display:flex;align-items:center;gap:6px}
+  .plan-l input{width:52px;text-align:center}
+  .plan-l label{white-space:nowrap}
+  .tl{position:relative;flex:1;height:58px;margin:0 8px}
+  .tl-axis{position:absolute;left:0;right:0;top:20px;height:1px;
+    background:repeating-linear-gradient(90deg,var(--line2) 0 1px,transparent 1px 12px)}
+  .tl-axis::before{content:"";position:absolute;left:0;right:0;top:0;height:1px;background:var(--line2)}
+    .tl-node{position:absolute;top:8px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:5px;
+    background:none;border:0;padding:0;cursor:pointer;color:var(--mut);letter-spacing:0}
+  .tl-node:hover:not(:disabled){background:none;color:var(--fg)}
+  .tl-dot{width:24px;height:24px;border-radius:50%;border:1.5px solid var(--ice);background:var(--void);position:relative;
+    font:700 11px/21px var(--disp);letter-spacing:.04em;color:var(--ice);text-align:center}
+  .tl-node.part .tl-dot{background:linear-gradient(90deg,var(--ice-d) 50%,var(--void) 50%)}
+  .tl-node.done .tl-dot{background:var(--ice);color:#04141d}
+  .tl-node.done.gold .tl-dot,.tl-node.gold .tl-dot{border-color:var(--gold)}
+  .tl-node.done .tl-dot{box-shadow:0 0 0 3px var(--ice-g)}
+  .tl-node.off .tl-dot{border-style:dashed;border-color:var(--dim);color:var(--dim);background:var(--void)}
+  .tl-lab{font:500 10px var(--mono);white-space:nowrap}
+  .tl-now{position:absolute;top:2px;bottom:6px;width:0;border-left:1px dashed var(--gold);display:none}
+  .tl-now::after{content:"NOW";position:absolute;top:-2px;left:4px;font:600 9px var(--disp);letter-spacing:.18em;color:var(--gold)}
+  .plan-r{display:flex;flex-direction:column;align-items:flex-end;gap:4px;min-width:96px}
+  .plan-r .v{font:700 26px/1 var(--disp);letter-spacing:.04em}
+  .plan-r .v small{font:500 11px var(--disp);letter-spacing:.18em;color:var(--mut);margin-left:4px}
+
+  /* ---------- runs ---------- */
+  .runs-wrap{flex:1;min-height:0;display:flex;flex-direction:column;gap:10px}
+  .runs{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding-right:2px;scroll-behavior:smooth}
+  .run{padding:0;overflow:hidden;flex:none}
+  .run.flash{animation:flash 1s ease-out}
+  @keyframes flash{0%{border-color:var(--ice);box-shadow:0 0 0 3px var(--ice-g)}100%{border-color:var(--line);box-shadow:none}}
+  .run-h{display:flex;align-items:center;gap:12px;padding:8px 10px 8px 6px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .run.collapsed .run-h{border-bottom:0}
+  .run.collapsed .run-b{display:none}
+  .run.collapsed .collapse{transform:none}
+  .collapse{transform:rotate(90deg);transition:transform .15s}
+  .run-id{display:flex;align-items:baseline;gap:7px}
+  .run-no{font:700 26px/1 var(--disp);letter-spacing:.04em}
+  .tplus{background:#0a0f15;border:1px solid var(--line2);border-radius:2px;padding:2px 8px;color:var(--mut);font:600 12px var(--disp);letter-spacing:.14em;text-transform:uppercase}
+  .tplus input{width:54px;border:0;background:transparent;padding:3px 0;text-align:right;font:600 15px var(--mono);color:var(--gold)}
+  .tplus input:focus{outline:0}
+  .tplus:focus-within{border-color:var(--gold)}
+  .meta-due{font:600 12px var(--disp);letter-spacing:.16em;text-transform:uppercase;color:var(--mut)}
+  .meta-due.act{color:var(--gold)} .meta-due.late{color:var(--red)} .meta-due.done{color:var(--ok)}
+  .chip{font:500 11px/1 var(--mono);padding:4px 7px;border:1px solid var(--line2);border-radius:2px;color:var(--mut)}
+  .chip:empty{display:none}
+  .chip b{color:var(--fg);font-weight:500}
+  .run.excluded .run-b{opacity:.45}
+  .run-b{display:grid;grid-template-columns:1fr 1fr}
+  .run-note{grid-column:1/-1;border-top:1px solid var(--line);padding:6px 10px}
+  .run-note input{width:100%;border-color:transparent;background:transparent}
+  .run-note input:hover,.run-note input:focus{border-color:var(--line2);background:#0a0f15}
+
+  .phase{padding:10px 12px 12px;display:flex;flex-direction:column;gap:8px;min-width:0}
+  .phase+.phase{border-left:1px solid var(--line)}
+  .phase.load{--c:var(--ice);--cd:var(--ice-d);--cg:var(--ice-g)}
+  .phase.unload{--c:var(--gold);--cd:var(--gold-d);--cg:var(--gold-g)}
+  .ph-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .ph-title{display:flex;align-items:center;gap:8px;font:700 16px var(--disp);letter-spacing:.24em;color:var(--c)}
+  .ph-title svg{width:14px;height:14px}
+  .ph-count{font:500 11px var(--mono);color:var(--dim)}
+  .temp{display:flex;align-items:center;gap:6px;border:1px solid var(--line2);border-radius:2px;background:#0a0f15;padding:1px 4px 1px 8px}
+  .temp:focus-within{border-color:var(--c)}
+  .temp span.l{font:600 10px var(--disp);letter-spacing:.18em;color:var(--mut)}
+  .temp input{width:58px;border:0;background:transparent;text-align:right;padding:4px 0;font-weight:500}
+  .temp input:focus{outline:0}
+  .temp .deg{color:var(--mut)}
+  .rows{display:flex;flex-direction:column}
+  .rowh,.row{display:grid;grid-template-columns:14px minmax(70px,1fr) minmax(88px,1.25fr) 52px 78px 22px;gap:8px;align-items:center}
+  .rowh{padding:0 0 5px;font:600 10px var(--disp);letter-spacing:.18em;color:var(--dim);text-transform:uppercase;border-bottom:1px solid var(--line)}
+  .row{padding:4px 0;border-bottom:1px solid rgba(255,255,255,.03)}
+  .row input{width:100%;text-align:right;padding:4px 7px}
+  .dot{width:9px;height:9px;border-radius:50%;border:1.5px solid var(--dim)}
+  .row.has .dot{background:var(--c);border-color:var(--c);box-shadow:0 0 0 3px var(--cg)}
+  .row.has input[data-pf=raw]{color:var(--c)}
+  .ptemp{font-size:11px;color:var(--mut);text-align:right}
+  .row button.cap{padding:4px 6px;font-size:11px;border-color:var(--cd);color:var(--c);background:transparent}
+  .row button.cap:hover:not(:disabled){background:var(--cd);border-color:var(--c)}
+  .row.has button.cap{color:var(--mut);border-color:var(--line2)}
+  .empty{padding:14px 0;color:var(--dim);font-size:12px}
+  .ph-f{display:flex;gap:8px;align-items:center;margin-top:2px}
+  .ph-f button.add{border-style:dashed;border-color:var(--cd);color:var(--c);background:transparent}
+  .ph-f button.add:hover:not(:disabled){background:var(--cg);border-color:var(--c)}
+
+  .addrun{display:flex;align-items:center;gap:12px;padding:0}
+  .addrun button{flex:1;padding:12px;border:1px dashed var(--line2);background:transparent;color:var(--mut);font-size:15px;letter-spacing:.24em}
+  .addrun button:hover:not(:disabled){border-color:var(--ice);color:var(--ice);background:var(--ice-g)}
+  .hint{min-height:16px;color:var(--mut);font-size:12px}
+
+  /* ---------- side column ---------- */
+  .readout{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin:6px 0 10px}
+  .wmeta{display:flex;flex-direction:column;align-items:flex-end;gap:4px;font-variant-numeric:tabular-nums}
+  .readout .big{font:700 52px/.85 var(--disp);letter-spacing:.01em;font-variant-numeric:tabular-nums}
+  .readout .u{font:600 15px var(--disp);letter-spacing:.2em;color:var(--mut);margin-left:6px}
+  .kv{display:grid;grid-template-columns:1fr auto;gap:4px 12px;font-size:12px}
+  .kv span.k{color:var(--dim)}
+  .kv b{font-weight:500;text-align:right;font-variant-numeric:tabular-nums}
+  canvas{width:100%;display:block;background:#080c11;border:1px solid var(--line);border-radius:2px}
+  #chart{flex:1 1 0;height:0;min-height:90px}
+  .linkline{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;font-size:11px;color:var(--mut);margin-bottom:8px}
+  .linkline .temp input{width:46px}
+  .chartwrap{position:relative;flex:1 1 0;min-height:100px}
+  .chartwrap canvas{position:absolute;inset:0;width:100%;height:100%}
+  .runmenu-btn{position:absolute;top:6px;right:6px;z-index:2;display:flex;align-items:center;gap:7px;padding:4px 9px 4px 7px;
+    background:rgba(12,17,23,.88);border-color:var(--line2);color:var(--mut);font-size:11px}
+  .runmenu-btn svg{width:14px;height:14px}
+  .runmenu-btn[aria-expanded=true]{color:var(--fg);border-color:var(--ice)}
+  .runmenu{position:absolute;top:36px;right:6px;z-index:3;width:216px;max-height:calc(100% - 44px);overflow:auto;padding:10px;
+    background:var(--panel2);border:1px solid var(--line2);border-radius:3px;box-shadow:0 14px 40px rgba(0,0,0,.65)}
+  .runmenu[hidden]{display:none}
+  .runmenu .hd{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .runmenu .hd button{padding:2px 6px;font-size:10px}
+  .pills{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .pill{display:flex;align-items:center;gap:7px;padding:6px 8px;background:transparent;color:var(--dim);border-color:var(--line2);font-size:12px;letter-spacing:.1em}
+  .pill i{width:9px;height:9px;border-radius:50%;border:1.5px solid var(--c);background:transparent;flex:none}
+  .pill[aria-pressed=true]{color:var(--fg);background:var(--raise);border-color:var(--c)}
+  .pill[aria-pressed=true] i{background:var(--c)}
+  .pill.nofit{border-style:dashed}
+  .runmenu .note{margin:8px 0 0;font-size:10px;color:var(--dim);line-height:1.5}
+  .swatch{width:10px;height:10px;border-radius:50%;background:var(--c);align-self:center;box-shadow:0 0 0 3px rgba(255,255,255,.04)}
+  .ctl{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px}
+  .ctl select{padding:3px 6px;font-size:12px}
+  .ctl label{font-size:12px}
+  .v-open{color:var(--red)} .v-arm{color:var(--gold)} .v-safe{color:var(--ok)}
+  .bars{display:inline-flex;align-items:flex-end;gap:2px;height:11px;margin-left:4px}
+  .bars i{width:3px;background:#2a3542}
+  .bars i:nth-child(1){height:4px} .bars i:nth-child(2){height:6px}
+  .bars i:nth-child(3){height:9px} .bars i:nth-child(4){height:11px}
+  .bars i.on{background:var(--fg)}
+  .sol-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:8px 0}
+  .sol-grid>div{border:1px solid var(--line);border-radius:2px;padding:6px 8px;background:#0a0f15;min-width:0}
+  .sol-grid .eyebrow{display:block;margin-bottom:4px;font-size:10px}
+  .sol-grid b{font-weight:500;font-size:13px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+  .sol-grid .wide{grid-column:1/-1}
+  .seg{display:inline-flex;border:1px solid var(--line2);border-radius:2px;overflow:hidden}
+  .seg button{border:0;border-radius:0;padding:3px 9px;font-size:11px;background:transparent;color:var(--mut)}
+  .seg button.on{background:var(--raise);color:var(--fg)}
+  .sec-h{display:flex;align-items:center;gap:8px}
+  .btns{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+  .btns button.pri{flex:1}
+  details{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}
+  summary{cursor:pointer;color:var(--mut);font:600 11px var(--disp);letter-spacing:.2em;text-transform:uppercase}
+  .testbadge{font:600 10px var(--disp);letter-spacing:.18em;text-transform:uppercase;color:#1b1203;background:var(--gold);padding:3px 7px;border-radius:2px}
+  .testbadge[hidden]{display:none}
+  button.testing{background:var(--gold-d);border-color:var(--gold);color:var(--gold)}
+  .legend{display:flex;gap:12px;font-size:11px;color:var(--mut);margin-top:6px}
+  .legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
+
+  /* ---------- relay bar ---------- */
+  .relay{display:grid;grid-template-columns:230px repeat(5,minmax(0,1fr));gap:10px;align-items:stretch;padding:10px 12px}
+  .rstate{display:flex;flex-direction:column;justify-content:center;gap:7px;padding-right:10px;border-right:1px solid var(--line)}
+  .rstate .row2{display:flex;align-items:center;gap:9px;font:700 22px/1 var(--disp);letter-spacing:.16em}
+  .lamp{width:11px;height:11px;border-radius:50%;background:var(--dim)}
+  .lamp.safe{background:var(--ok);box-shadow:0 0 0 3px var(--ok-d)}
+  .lamp.arm{background:var(--gold);box-shadow:0 0 0 3px var(--gold-d)}
+  .lamp.open{background:var(--red);box-shadow:0 0 0 3px var(--red-d)}
+  .rcell{display:flex;gap:6px;align-items:stretch;min-width:0}
+  .rcell input{width:64px;text-align:center;align-self:stretch;font-size:15px}
+  .rcell .unit{writing-mode:vertical-rl;transform:rotate(180deg);font:600 10px var(--disp);letter-spacing:.2em;color:var(--dim);align-self:center}
+  .rbtn{flex:1;min-height:58px;font-size:20px;letter-spacing:.24em;border-radius:2px}
+  .b-arm{background:var(--gold-d);border-color:var(--gold);color:var(--gold)}
+  .b-arm:hover:not(:disabled){background:#6b4c14;border-color:var(--gold)}
+  .b-fire{background:var(--red-d);border-color:var(--red);color:#ffb3aa}
+  .b-fire:hover:not(:disabled){background:#6a1f19;border-color:var(--red)}
+  .b-safe{background:var(--ok-d);border-color:var(--ok);color:var(--ok)}
+  .b-safe:hover:not(:disabled){background:#1a5236;border-color:var(--ok)}
+  .b-neu{background:transparent;border-color:var(--line2);color:var(--mut)}
+  button.on{outline:2px solid var(--gold);outline-offset:1px}
+  .rhint{grid-column:1/-1;margin-top:-2px;font-size:11px;color:var(--dim)}
+  .relay.collapsed{grid-template-columns:1fr;padding:8px 12px}
+  .relay.collapsed .rcell,.relay.collapsed .rhint{display:none}
+  .relay.collapsed .rstate{border-right:0;padding:0;flex-direction:row;align-items:center;gap:16px}
+  .relay.collapsed .collapse{transform:none}
+
+  /* ---------- dialog + toasts ---------- */
+  dialog{background:var(--panel2);color:var(--fg);border:1px solid var(--line2);border-radius:3px;padding:20px 22px;max-width:440px;width:calc(100% - 32px);box-shadow:0 24px 80px rgba(0,0,0,.7)}
+  dialog::backdrop{background:rgba(2,4,7,.72);backdrop-filter:blur(2px)}
+  dialog h3{margin:0 0 8px;font:700 20px var(--disp);letter-spacing:.18em;text-transform:uppercase}
+  dialog p{margin:0 0 16px;color:var(--mut);line-height:1.55}
+  dialog .btns{justify-content:flex-end;margin-top:0}
+  .toasts{position:fixed;right:16px;bottom:112px;display:flex;flex-direction:column;gap:8px;z-index:50;pointer-events:none}
+  .toast{background:var(--panel2);border:1px solid var(--line2);border-left:3px solid var(--ice);padding:9px 14px;border-radius:2px;font-size:12px;max-width:340px;
+    box-shadow:0 8px 30px rgba(0,0,0,.6);animation:tin .18s ease-out}
+  .toast.bad{border-left-color:var(--red)}
+  @keyframes tin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+  @media(max-width:1180px){
+    body{overflow:auto}
+    .app{height:auto}
+    .main{grid-template-columns:1fr}
+    .sidecol>.panel{flex:none}
+    #chart{height:130px;flex:none}
+    .chartwrap{height:170px;flex:none}
+    .runs{overflow:visible}
+    .run-b{grid-template-columns:1fr}
+    .phase+.phase{border-left:0;border-top:1px solid var(--line)}
+    .relay{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .rstate{grid-column:1/-1;border-right:0;border-bottom:1px solid var(--line);padding:0 0 10px;flex-direction:row;justify-content:space-between}
+    .plan{flex-wrap:wrap}
+    .tl{flex-basis:100%;order:3}
+    .toasts{bottom:16px}
+  }
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+</style></head><body>
+<div class="app">
+
+  <!-- ===== top bar ===== -->
+  <header class="topbar">
+    <div class="brand"><span class="conn" id="conn" title="board link"></span><b>HOPPER</b><span class="sub">Thruster stand · load-cell calibration</span></div>
+    <input class="sessname" id="sessname" aria-label="Session name" placeholder="Name this session" spellcheck="false">
+    <span class="save-state" id="savestate"></span>
+    <span class="sp"></span>
+    <div class="clock" id="clock" title="Mission clock: tracks when each run is due">
+      <span class="eyebrow">T+</span><span class="t" id="clockt">00:00:00</span>
+      <button class="mini ghost" id="clockbtn">Start</button>
+    </div>
+    <div class="apiwrap">
+      <button class="ghost" id="calimport">Import</button>
+      <button class="ghost" id="calexport">Export JSON</button>
+      <button class="ghost" id="calnew">New</button>
+      <input type="file" id="calfile" accept="application/json,.json" hidden>
+    </div>
+    <div class="apiwrap">
+      <input id="apiurl" placeholder="http://192.168.137.50" aria-label="Board address">
+      <button id="apiset" class="ghost">Connect</button>
+      <span class="mut small" id="apihint"></span>
+    </div>
+  </header>
+
+  <!-- ===== main ===== -->
+  <div class="main">
+    <div class="calcol">
+
+      <section class="panel plan" aria-label="Calibration flight plan">
+        <div class="plan-l">
+          <span class="eyebrow">Flight plan</span>
+          <div class="row"><label class="small">Default interval <input type="number" id="definterval" min="1" step="1"> min</label></div>
+        </div>
+        <div class="tl" id="tl"></div>
+        <div class="plan-r">
+          <span class="eyebrow">Runs</span>
+          <span class="v" id="plan_n">0<small>logged</small></span>
+        </div>
+      </section>
+
+      <div class="runs-wrap">
+        <div class="runs" id="runs"></div>
+        <div class="addrun"><button id="addrun">+ New run</button></div>
+        <div class="hint" id="hint"></div>
+      </div>
+    </div>
+
+    <aside class="sidecol">
+
+      <section class="panel">
+        <div class="sec-h"><span class="eyebrow">Thrust</span><span class="testbadge" id="testbadge" hidden>Test · calculated here</span><span class="sp"></span><span class="mut small" id="ipline"></span></div>
+        <div class="readout">
+          <div class="big"><span id="w">--</span><span class="u">N</span></div>
+          <div class="wmeta">
+            <div class="mut small" id="wsub">-- kg · -- g · -- counts</div>
+            <div class="mut small" id="s_rate">--</div>
+          </div>
+        </div>
+        <div class="linkline"><span id="s_link">--</span><span class="bars" id="s_bars"><i></i><i></i><i></i><i></i></span><span>up <span id="s_up">0:00:00</span></span><span>board <span id="onboard">--</span></span>
+          <span class="temp" title="Ambient temperature near the load cell right now - sent to the board so it can apply the fit's temperature compensation. No onboard probe (TEMP_PIN &lt; 0), so this is typed in."><span class="l">Amb</span><input type="number" step="0.1" id="ambtemp" placeholder="--" aria-label="Ambient temperature"><span class="deg">°C</span></span>
+          <span class="mut small" id="tempcompline"></span></div>
+        <canvas id="chart"></canvas>
+        <div class="ctl">
+          <select id="plotsel" aria-label="Trace">
+            <option value="filt">denoised</option>
+            <option value="raw">raw / fast</option>
+            <option value="counts">raw counts</option>
+          </select>
+          <select id="win" aria-label="Window">
+            <option value="5000">5 s</option>
+            <option value="20000" selected>20 s</option>
+            <option value="60000">60 s</option>
+          </select>
+          <button class="mini" id="tare">Tare</button>
+          <button class="mini ghost" id="clr">Clear</button>
+        </div>
+      </section>
+
+      <section class="panel fitpanel">
+        <div class="sec-h"><span class="eyebrow">Fit solution</span><span class="sp"></span>
+          <div class="seg" id="fitmode"><button class="on" data-m="fit">Fit</button><button data-m="res">Residual</button></div></div>
+        <div class="sol-grid">
+          <div><span class="eyebrow">k · counts/<span class="unitl">g</span></span><b id="f_k">--</b></div>
+          <div><span class="eyebrow">Zero offset</span><b id="f_zero">--</b></div>
+          <div><span class="eyebrow">R²</span><b id="f_r2">--</b></div>
+          <div><span class="eyebrow">RMS error</span><b id="f_rms">--</b></div>
+          <div><span class="eyebrow">Hysteresis max</span><b id="f_hyst">--</b></div>
+          <div><span class="eyebrow">Points · runs</span><b id="f_n">--</b></div>
+          <div><span class="eyebrow">Temp coeff</span><b id="f_tc">--</b></div>
+          <div><span class="eyebrow">Temp ref</span><b id="f_tref">--</b></div>
+        </div>
+        <div class="chartwrap">
+          <canvas id="calchart"></canvas>
+          <button class="runmenu-btn" id="runmenubtn" aria-expanded="false" aria-controls="runmenu" title="Choose which runs to plot">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 3.5h10M2 7h10M2 10.5h10"/></svg><span id="runmenulbl">Runs</span></button>
+          <div class="runmenu" id="runmenu" hidden><div class="hd"><span class="eyebrow">Plot runs</span><span class="sp"></span>
+            <button class="ghost" data-all="1">All</button><button class="ghost" data-all="0">None</button></div>
+            <div class="pills" id="pills"></div>
+            <p class="note">Dashed = not in the fit. Hiding a run only changes this graph.</p></div>
+        </div>
+        <div class="legend"><span><i style="background:var(--mut)"></i>loading</span><span><i style="background:none;border:1.5px solid var(--mut)"></i>unloading</span>
+          <span class="sp"></span><label>unit <input id="unit" value="g" style="width:44px;padding:2px 5px"></label></div>
+        <div class="sec-h" style="margin-top:4px"><span class="eyebrow">Runs for Test it / Apply</span><span class="sp"></span>
+          <button class="ghost" data-scope-all="1" style="padding:2px 6px;font-size:10px">All</button>
+          <button class="ghost" data-scope-all="0" style="padding:2px 6px;font-size:10px">None</button></div>
+        <div class="pills" id="scopepills"></div>
+        <p class="mut small" style="margin:4px 0 8px;line-height:1.5">Picks which calibration run(s) feed the fit used by Test it and Apply to board - separate from a run's own "in fit" checkbox below, which this stays in sync with.</p>
+        <label class="small" id="usetempwrap" title="Fit a zero-offset-vs-temperature term from the points' recorded temperatures and send it along with Apply to board. Needs the fit's own 'Temp coeff' box above to show a value - greyed out otherwise."><input type="checkbox" id="usetempfit" checked> use temp comp when applying</label>
+        <div class="btns">
+          <button class="ghost" id="testit" title="Correct the live reading in this dashboard with the fit. Nothing is sent to the board.">Test it</button>
+          <button class="pri" id="apply">Apply to board</button>
+          <button class="ghost" id="savecal">Save to flash</button>
+        </div>
+        <div class="mut small" id="calmsg" style="min-height:15px;margin-top:6px"></div>
+        <details>
+          <summary>Manual override</summary>
+          <div class="btns" style="margin-top:8px">
+            <input type="number" id="mcpu" step="any" placeholder="k" style="width:96px">
+            <input type="number" id="mzero" step="any" placeholder="zero" style="width:96px">
+            <button class="ghost" id="setman">Set</button>
+          </div>
+        </details>
+      </section>
+
+    </aside>
+  </div>
+
+  <!-- ===== relay bar ===== -->
+  <section class="panel relay" aria-label="Valve control">
+    <div class="rstate">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="eyebrow">Valve</span>
+        <button class="icon collapse" id="relaycollapse" aria-label="Collapse valve controls" aria-expanded="true" title="Collapse / expand valve controls" style="margin-left:auto">▸</button>
+      </div>
+      <div class="row2"><span class="lamp safe" id="lamp_v"></span><span id="s_valve" class="v-safe">--</span></div>
+      <div class="row2" style="font-size:15px;color:var(--mut)"><span class="lamp" id="lamp_a"></span><span id="s_arm">--</span></div>
+    </div>
+    <div class="rcell"><button id="armtoggle" class="rbtn b-arm">Arm</button></div>
+    <div class="rcell"><button id="open" class="rbtn b-fire" disabled>Open</button></div>
+    <div class="rcell"><button id="close" class="rbtn b-safe" disabled>Close</button></div>
+    <div class="rcell"><input type="number" id="pms" value="200" min="10" step="10" title="pulse width, ms" aria-label="Pulse width ms"><span class="unit">ms</span>
+      <button id="fire" class="rbtn b-fire" disabled>Fire</button></div>
+    <div class="rcell"><input type="number" id="phz" value="5" min="1" max="50" step="1" title="cycles per second, Hz" aria-label="Cycle rate Hz"><span class="unit">Hz</span>
+      <button id="cycle" class="rbtn b-fire" disabled>Cycle</button></div>
+    <div class="rhint" id="vhint">Fire = one pulse (ms) · Cycle = repeat open/close (Hz) · inert until armed</div>
+  </section>
+</div>
+
+<dialog id="dlg"><h3 id="dlgt"></h3><p id="dlgp"></p>
+  <div class="btns"><button class="ghost" id="dlgno">Cancel</button><button class="pri" id="dlgyes">OK</button></div></dialog>
+<div class="toasts" id="toasts"></div>
+
+<script>
+const $=s=>document.querySelector(s);
+const p2=n=>String(n).padStart(2,'0');
+const uid=()=>Math.random().toString(36).slice(2,9)+Date.now().toString(36).slice(-3);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num=v=>{ if(v===''||v==null) return null; const n=Number(v); return isFinite(n)?n:null; };
+
+// ===================================================================
+//  API base / live stream
+// ===================================================================
+let API = localStorage.getItem('hopperApi');
+if(!API) API = (location.protocol==='http:' && location.host) ? location.origin : 'http://192.168.137.50';
+API = API.replace(/\/+$/,'');
+const api = p => API + p;
+$('#apiurl').value = API;
+$('#apihint').textContent = (location.protocol==='http:'&&location.host) ? '' : 'file mode';
+$('#apiset').onclick = ()=>{
+  API = ($('#apiurl').value||'').trim().replace(/\/+$/,'') || API;
+  if(!/^https?:\/\//.test(API)) API='http://'+API;
+  $('#apiurl').value=API;
+  localStorage.setItem('hopperApi',API);
+  hist=[]; lastWall=0; wsBackoff=300;
+  connectWS();
+};
+
+let hist=[], WINDOW_MS=20000, HARD_MAX=8000, paused=false;
+let lastDevT=0, lastWall=0;
+let calCpu=1, calZero=0, armed=false, liveRaw=null, liveTemp=null, online=false;
+const GAP_MS=300, G0=9.80665;
+const gToN = g => g/1000*G0;
+
+function setConn(ok){ $('#conn').classList.toggle('ok',ok); }
+function devNow(){ return lastWall ? lastDevT + Math.max(0, Date.now()-lastWall) : Date.now(); }
+function fmtUp(s){s=Math.floor(s);const h=Math.floor(s/3600),m=Math.floor(s/60)%60,x=s%60;return h+':'+p2(m)+':'+p2(x);}
+function fmtNum(n,d=4){if(n==null||!isFinite(n))return'--';const a=Math.abs(n);
+  if(a!==0&&(a<1e-3||a>=1e7))return n.toExponential(3);return n.toFixed(d);}
+function rssiBars(r){ if(!r)return 0; return r>=-55?4:r>=-65?3:r>=-73?2:1; }
+function setBars(n){ document.querySelectorAll('#s_bars i').forEach((el,i)=>el.classList.toggle('on',i<n)); }
+
+// Test mode: the dashboard turns raw counts into mass with the fit it just
+// computed (same median-fed stability gate the firmware uses), so a
+// calibration can be checked without touching what's stored on the board.
+let testMode=false, tFilt=null, tOut=0, testZero=0;
+const T_BAND=0.5, T_CONFIRM=3;
+function testGate(w0){
+  if(tFilt==null){ tFilt=w0; tOut=0; }
+  else if(Math.abs(w0-tFilt)>T_BAND){ if(++tOut>=T_CONFIRM){ tFilt=w0; tOut=0; } }
+  else tOut=0;
+  return Math.abs(tFilt)<T_BAND?0:tFilt;
+}
+function setTest(on){
+  testMode=on; tFilt=null; tOut=0; testZero=0; hist=[];
+  $('#testit').textContent=on?'Stop test':'Test it';
+  $('#testit').classList.toggle('testing',on);
+  $('#testbadge').hidden=!on;
+  $('#w').style.color=on?'var(--gold)':'';
+  $('#tare').title=on?'Zeros the test correction only - the board itself is untouched while testing':'';
+  toast(on?'Testing: readings are corrected in this dashboard. The board is unchanged.':'Test stopped: showing the board calibration again');
+}
+function onData(d){
+  calCpu=d.countsPerUnit; calZero=d.zeroOffset; online=d.online;
+  liveRaw=d.online?d.raw:null;
+  liveTemp=(d.tempC!=null&&isFinite(d.tempC))?d.tempC:null;
+
+  let grams=d.filt, wFast=d.weight;
+  if(testMode && lastFit && lastFit.ok){            // correct the raw counts here, ignoring the board's calibration
+    wFast=(d.raw-lastFit.B)/lastFit.A - testZero; grams=testGate(wFast);
+  }
+  $('#w').textContent    = online ? gToN(grams).toFixed(3) : '--';
+  $('#wsub').textContent = online ? `${(grams/1000).toFixed(3)} kg · ${grams.toFixed(1)} g · ${d.raw} counts` : '-- kg · -- g · -- counts';
+  $('#onboard').textContent = `k ${fmtNum(d.countsPerUnit,3)}`;
+  $('#ipline').textContent = (online ? '' : 'NO SIGNAL · ') + d.ip + (d.simulate?' · SIM':'');
+
+  const boardLiveTemp=(d.liveTempC!=null&&isFinite(d.liveTempC))?d.liveTempC:null;
+  if(boardLiveTemp!=null && d.tempCoeff){
+    const compG=(d.tempCoeff*(boardLiveTemp-d.tempRefC))/Math.abs(d.countsPerUnit||1);
+    $('#tempcompline').textContent=`comp ${compG>=0?'+':''}${compG.toFixed(1)}g @ ${boardLiveTemp.toFixed(1)}°C`;
+  } else {
+    $('#tempcompline').textContent = boardLiveTemp!=null ? `${boardLiveTemp.toFixed(1)}°C · no temp comp applied` : '';
+  }
+
+  $('#s_up').textContent   = fmtUp(d.uptime);
+  $('#s_rate').textContent = online ? (d.sps.toFixed(0)+' /s') : '--';
+  $('#s_link').textContent = d.ap ? 'AP' : (d.rssi ? d.rssi+' dBm' : '--');
+  setBars(d.ap ? 0 : rssiBars(d.rssi));
+
+  $('#s_valve').textContent = d.relayState ? 'OPEN' : 'CLOSED';
+  $('#s_valve').className   = d.relayState ? 'v-open' : 'v-safe';
+  $('#lamp_v').className    = 'lamp '+(d.relayState?'open':'safe');
+  $('#s_arm').textContent   = d.relayEnabled ? 'ARMED' : 'SAFE';
+  $('#s_arm').style.color   = d.relayEnabled ? 'var(--gold)' : '';
+  $('#lamp_a').className    = 'lamp '+(d.relayEnabled?'arm':'safe');
+
+  armed=d.relayEnabled;
+  const cyc=(d.relayCycle||0)>0;
+  for(const id of ['#open','#close','#fire','#cycle']) $(id).disabled=!armed;
+  const at=$('#armtoggle');
+  at.textContent = armed ? 'Disarm' : 'Arm';
+  at.className   = 'rbtn '+(armed?'b-neu':'b-arm');
+  const cb=$('#cycle');
+  cb.textContent = cyc ? 'Stop' : 'Cycle';
+  cb.classList.toggle('on',cyc);
+  $('#vhint').textContent = !armed ? 'Inert until armed'
+      : (cyc ? ('Cycling '+d.relayCycle.toFixed(0)+' Hz') : 'Fire = one pulse (ms) · Cycle = repeat open/close (Hz)');
+
+  const t=d.tnow;
+  if(lastWall && t < lastDevT - 5000) hist=[];
+  if(!paused && (!hist.length || t > hist[hist.length-1].t)) hist.push({t, raw:wFast, filt:grams, counts:d.raw});
+  lastDevT=t; lastWall=Date.now();
+  const cut=devNow()-WINDOW_MS-3000;
+  let i=0; while(i<hist.length && hist[i].t<cut) i++; if(i) hist.splice(0,i);
+  if(hist.length>HARD_MAX) hist.splice(0,hist.length-HARD_MAX);
+  refreshSensorButtons();
+}
+
+let ws=null, wsBackoff=300, wsTimer=null;
+const wsUrl=()=>API.replace(/^http/,'ws')+'/ws';
+function connectWS(){
+  if(wsTimer){ clearTimeout(wsTimer); wsTimer=null; }
+  if(ws){ ws.onopen=ws.onmessage=ws.onclose=ws.onerror=null; try{ ws.close(); }catch(e){} }
+  let sock;
+  try{ sock=new WebSocket(wsUrl()); }catch(e){ scheduleReconnect(); return; }
+  ws=sock;
+  sock.onmessage=ev=>{ try{ onData(JSON.parse(ev.data)); setConn(true); wsBackoff=300; }catch(e){} };
+  sock.onclose =()=>{ setConn(false); online=false; liveRaw=null; liveTemp=null; refreshSensorButtons(); scheduleReconnect(); };
+  sock.onerror =()=>{ try{ sock.close(); }catch(e){} };
+}
+function scheduleReconnect(){
+  if(wsTimer) return;
+  wsTimer=setTimeout(()=>{ wsTimer=null; connectWS(); }, wsBackoff);
+  wsBackoff=Math.min(wsBackoff*1.6, 5000);
+}
+connectWS();
+
+// ===================================================================
+//  Canvas helpers (sharp on hi-dpi screens)
+// ===================================================================
+function sizeCanvas(c){
+  const dpr=window.devicePixelRatio||1, w=c.clientWidth, h=c.clientHeight;
+  if(c.width!==Math.round(w*dpr)||c.height!==Math.round(h*dpr)){ c.width=Math.round(w*dpr); c.height=Math.round(h*dpr); }
+  const x=c.getContext('2d'); x.setTransform(dpr,0,0,dpr,0,0);
+  return {x,w,h};
+}
+const MONO='11px "IBM Plex Mono",ui-monospace,monospace';
+
+// ===================================================================
+//  Thrust chart
+// ===================================================================
+const cv=$('#chart');
+function draw(){
+  const {x:cx,w,h}=sizeCanvas(cv), pad=36, key=$('#plotsel').value;
+  cx.clearRect(0,0,w,h);
+  const t1=devNow(), t0=t1-WINDOW_MS;
+  const X=t=>pad+(w-pad-8)*(t-t0)/WINDOW_MS;
+  const D=key==='counts'?(v=>v):gToN;
+  const gv=p=>{const v=p[key];return(v==null||!isFinite(v))?null:D(v);};
+  const vis=hist.filter(p=>p.t>=t0-600&&p.t<=t1+600);
+  const ys=vis.map(gv).filter(v=>v!=null&&isFinite(v));
+  cx.font=MONO;
+  if(ys.length<2){
+    cx.strokeStyle='#1b2530';cx.setLineDash([4,4]);cx.beginPath();cx.moveTo(pad,h/2);cx.lineTo(w-8,h/2);cx.stroke();cx.setLineDash([]);
+    cx.fillStyle='#4a5767';cx.fillText('waiting for load cell…',pad+6,h/2-8);
+    return;
+  }
+  let mn=Math.min(...ys),mx=Math.max(...ys); if(mn===mx){mn-=1;mx+=1;}
+  const span=mx-mn; mn-=span*.12; mx+=span*.12;
+  const Y=v=>h-14-(h-14-8)*(v-mn)/((mx-mn)||1);
+  cx.strokeStyle='#131c26';cx.fillStyle='#4a5767';cx.lineWidth=1;
+  for(let i=0;i<=3;i++){ const v=mn+(mx-mn)*i/3,y=Y(v); cx.beginPath();cx.moveTo(pad,y);cx.lineTo(w-8,y);cx.stroke(); cx.fillText(v.toFixed(key==='counts'?0:2),2,y+3); }
+  if(key!=='counts'&&mn<0&&mx>0){cx.strokeStyle='#2c3b4e';cx.beginPath();cx.moveTo(pad,Y(0));cx.lineTo(w-8,Y(0));cx.stroke();}
+  cx.strokeStyle='#dde4ec';cx.lineWidth=1.8;cx.lineJoin='round';cx.lineCap='round';
+  const runs=[]; let run=[],pt=null;
+  for(const p of vis){
+    const v=gv(p);
+    if(v==null){ if(run.length)runs.push(run); run=[]; pt=p.t; continue; }
+    if(pt!=null&&run.length&&(p.t-pt)>GAP_MS){ runs.push(run); run=[]; }
+    run.push({x:X(p.t),y:Y(v)}); pt=p.t;
+  }
+  if(run.length)runs.push(run);
+  for(const r of runs){
+    cx.beginPath();
+    if(r.length===1){ cx.arc(r[0].x,r[0].y,1.3,0,7); cx.fillStyle='#dde4ec'; cx.fill(); continue; }
+    cx.moveTo(r[0].x,r[0].y);
+    for(let i=1;i<r.length-1;i++){ const mx2=(r[i].x+r[i+1].x)/2,my=(r[i].y+r[i+1].y)/2; cx.quadraticCurveTo(r[i].x,r[i].y,mx2,my); }
+    cx.lineTo(r[r.length-1].x,r[r.length-1].y); cx.stroke();
+  }
+  const last=vis[vis.length-1];
+  if(last&&gv(last)!=null&&(devNow()-last.t)<GAP_MS){ cx.fillStyle='#7cd4ff';cx.beginPath();cx.arc(X(last.t),Y(gv(last)),2.8,0,7);cx.fill(); }
+}
+setInterval(draw,100);
+$('#plotsel').onchange=draw;
+$('#win').onchange=e=>{WINDOW_MS=+e.target.value;draw();};
+$('#clr').onclick=()=>{hist=[];draw();};
+
+// ===================================================================
+//  Calibration session model
+// ===================================================================
+const LS_KEY='hopper.calibration.session.v2';
+const FORMAT='hopper-calibration';
+const newPoint=(mass=null)=>({id:uid(),mass,raw:null,tempC:null,t:null});
+const newPhase=zero=>({tempC:null,points:zero?[newPoint(0)]:[]});
+const newRun=at=>({id:uid(),atMinutes:at,include:true,hidden:false,collapsed:false,note:'',loading:newPhase(true),unloading:newPhase(false)});
+function newSession(){
+  const d=new Date();
+  const s={format:FORMAT,version:2,id:uid(),name:`Calibration ${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`,
+    unit:'g',createdAt:Date.now(),updatedAt:Date.now(),clockStartedAt:null,defaultInterval:30,runs:[]};
+  s.runs.push(newRun(0));
+  return s;
+}
+
+// Coerce anything we read from storage / a file into a well-formed session.
+function sanitize(raw){
+  if(!raw||typeof raw!=='object') throw new Error('not a calibration file');
+  const S0=newSession(); S0.runs=[];
+  const pt=p=>({id:String(p.id||uid()),mass:num(p.mass),raw:num(p.raw),tempC:num(p.tempC),t:num(p.t)});
+  const ph=q=>({tempC:num(q&&q.tempC),points:Array.isArray(q&&q.points)?q.points.map(pt):[]});
+  if(Array.isArray(raw.runs)){
+    S0.id=String(raw.id||S0.id); S0.name=String(raw.name||S0.name); S0.unit=String(raw.unit||'g').slice(0,7);
+    S0.createdAt=num(raw.createdAt)||S0.createdAt; S0.updatedAt=num(raw.updatedAt)||Date.now();
+    S0.clockStartedAt=num(raw.clockStartedAt); S0.defaultInterval=num(raw.defaultInterval)||30;
+    for(const r of raw.runs) S0.runs.push({id:String(r.id||uid()),atMinutes:num(r.atMinutes)??0,include:r.include!==false,
+      collapsed:!!r.collapsed,hidden:!!r.hidden,note:String(r.note||''),loading:ph(r.loading),unloading:ph(r.unloading)});
+  }else if(Array.isArray(raw.points)){            // legacy single-pass file
+    S0.unit=String(raw.unit||'g').slice(0,7); S0.name='Imported calibration';
+    const run=newRun(0); run.loading=ph({points:raw.points.map(p=>({mass:p.zero?0:p.mass,raw:p.raw,t:null}))});
+    S0.runs.push(run);
+  }else throw new Error('no runs found in file');
+  return S0;
+}
+
+let S;
+let saveFailed=false;
+try{ const j=localStorage.getItem(LS_KEY); S=j?sanitize(JSON.parse(j)):newSession(); }catch(e){ S=newSession(); }
+if(!S.runs.length) S.runs.push(newRun(0));
+
+let saveTimer=null;
+function persist(){
+  S.updatedAt=Date.now();
+  try{ localStorage.setItem(LS_KEY,JSON.stringify(S)); saveFailed=false;
+    const ss=$('#savestate'); ss.className='save-state ok'; ss.textContent='Saved '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  }catch(e){ saveFailed=true; const ss=$('#savestate'); ss.className='save-state bad'; ss.textContent='Not saved - export now'; }
+}
+function commit(){ clearTimeout(saveTimer); saveTimer=setTimeout(persist,150); }
+
+// ===================================================================
+//  Fit + hysteresis
+// ===================================================================
+const PH=['loading','unloading'];
+function gather(){
+  const out=[];
+  for(const run of S.runs){ if(!run.include) continue;
+    for(const ph of PH) for(const p of run[ph].points)
+      if(p.raw!=null && p.mass!=null) out.push({m:p.mass,r:p.raw,ph,run,tempC:p.tempC});
+  }
+  return out;
+}
+// Gaussian elimination with partial pivoting, 3x3 - used by the
+// temperature-aware fit below. Returns null if M is singular (e.g. every
+// point shares one temperature).
+function solve3(M,v){
+  const a=M.map(r=>r.slice()), b=v.slice();
+  for(let c=0;c<3;c++){
+    let piv=c; for(let r=c+1;r<3;r++) if(Math.abs(a[r][c])>Math.abs(a[piv][c])) piv=r;
+    if(Math.abs(a[piv][c])<1e-9) return null;
+    if(piv!==c){ [a[c],a[piv]]=[a[piv],a[c]]; [b[c],b[piv]]=[b[piv],b[c]]; }
+    for(let r=c+1;r<3;r++){ const f=a[r][c]/a[c][c]; for(let k=c;k<3;k++) a[r][k]-=f*a[c][k]; b[r]-=f*b[c]; }
+  }
+  const x=[0,0,0];
+  for(let r=2;r>=0;r--){ let s=b[r]; for(let k=r+1;k<3;k++) s-=a[r][k]*x[k]; x[r]=s/a[r][r]; }
+  return x;
+}
+function fit(){
+  const P=gather(), n=P.length;
+  const res={n,P,ok:false,runs:new Set(P.map(p=>p.run.id)).size};
+  if(n<2) return res;
+  let sx=0,sy=0,sxx=0,sxy=0;
+  for(const p of P){sx+=p.m;sy+=p.r;sxx+=p.m*p.m;sxy+=p.m*p.r;}
+  const den=n*sxx-sx*sx; if(Math.abs(den)<1e-9) return res;
+  const A=(n*sxy-sx*sy)/den, B=(sy*sxx-sx*sxy)/den;
+  if(Math.abs(A)<1e-9) return res;
+  const ym=sy/n; let ssr=0,sst=0;
+  for(const p of P){const e=p.r-(A*p.m+B); ssr+=e*e; sst+=(p.r-ym)**2;}
+  Object.assign(res,{ok:true,A,B,r2:sst>0?1-ssr/sst:1,rms:Math.sqrt(ssr/n)/Math.abs(A)});
+
+  // ---- optional joint fit: raw = A*mass + B + k*(T-Tref) ----
+  // Needs >=2 distinct recorded temperatures and enough points to leave a
+  // spare degree of freedom, or the coefficient is pure noise - see
+  // analyze_calibration.py, which found k is only weakly constrained by a
+  // 2C-wide calibration spread. Replaces A/B with the joint solution (so
+  // zeroOffset and the temp term come from one consistent fit) rather than
+  // bolting a separately-fit k onto the plain A/B above.
+  const TP=P.filter(p=>p.tempC!=null && isFinite(p.tempC));
+  const temps=new Set(TP.map(p=>p.tempC));
+  if(TP.length>=6 && temps.size>=2){
+    const tref=TP.reduce((s,p)=>s+p.tempC,0)/TP.length;
+    let Sxx=0,Sx=0,Sxu=0,Suu=0,Su=0,Sxr=0,Sr=0,Sur=0; const tn=TP.length;
+    for(const p of TP){ const u=p.tempC-tref, m=p.m, r=p.r;
+      Sxx+=m*m; Sx+=m; Sxu+=m*u; Suu+=u*u; Su+=u; Sxr+=m*r; Sr+=r; Sur+=u*r; }
+    const sol=solve3([[Sxx,Sx,Sxu],[Sx,tn,Su],[Sxu,Su,Suu]],[Sxr,Sr,Sur]);
+    if(sol && Math.abs(sol[0])>1e-9){
+      const [tA,tB,k]=sol;
+      let ssr3=0; const ym3=Sr/tn;
+      for(const p of TP){ const u=p.tempC-tref; const e=p.r-(tA*p.m+tB+k*u); ssr3+=e*e; }
+      let sst3=0; for(const p of TP) sst3+=(p.r-ym3)**2;
+      Object.assign(res,{tempOk:true,tA,tB,k,tempRef:tref,
+        tempR2:sst3>0?1-ssr3/sst3:1, tempRms:Math.sqrt(ssr3/tn)/Math.abs(tA), tempN:tn});
+    }
+  }
+  return res;
+}
+// Max |unload - load| at matching masses within one run, in mass units.
+function hysteresis(run,A){
+  if(!A) return null; let best=null;
+  for(const lp of run.loading.points){ if(lp.raw==null||lp.mass==null) continue;
+    for(const up of run.unloading.points){ if(up.raw==null||up.mass==null||Math.abs(up.mass-lp.mass)>1e-9) continue;
+      const d=Math.abs(up.raw-lp.raw)/Math.abs(A); if(best==null||d>best) best=d; } }
+  return best;
+}
+function phaseTemp(run,ph){ const t=run[ph].tempC; return t; }
+function runDone(run){
+  return PH.every(ph=>run[ph].points.length && run[ph].points.every(p=>p.raw!=null));
+}
+function runState(run){
+  const any=PH.some(ph=>run[ph].points.some(p=>p.raw!=null));
+  return runDone(run)?'done':any?'part':'idle';
+}
+
+// ===================================================================
+//  Rendering: runs
+// ===================================================================
+const runsEl=$('#runs');
+const ARROW={loading:'<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 12V2M2.5 6.5 7 2l4.5 4.5"/></svg>',
+             unloading:'<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 2v10M2.5 7.5 7 12l4.5-4.5"/></svg>'};
+
+function rowHTML(p,ph){
+  const has=p.raw!=null;
+  return `<div class="row ${has?'has':''}" data-pt="${p.id}">
+    <span class="dot"></span>
+    <input type="number" step="any" data-pf="mass" value="${p.mass??''}" placeholder="0" aria-label="Mass">
+    <input type="number" step="1" data-pf="raw" value="${p.raw??''}" placeholder="not captured" aria-label="Raw counts">
+    <span class="ptemp">${p.tempC!=null?p.tempC.toFixed(1)+'°':''}</span>
+    <button class="cap mini" data-act="capture">${has?'Retake':'Capture'}</button>
+    <button class="icon danger" data-act="delpt" aria-label="Remove weight" title="Remove weight">✕</button>
+  </div>`;
+}
+function phaseHTML(run,ph){
+  const P=run[ph], load=ph==='loading';
+  return `<section class="phase ${load?'load':'unload'}" data-ph="${ph}">
+    <div class="ph-h">
+      <span class="ph-title">${ARROW[ph]}${load?'Loading':'Unloading'}</span>
+      <span class="ph-count"></span><span class="sp"></span>
+      <div class="temp" title="Temperature around the load cell"><span class="l">Temp</span>
+        <input type="number" step="0.1" data-f="phtemp" value="${P.tempC??''}" placeholder="—" aria-label="${load?'Loading':'Unloading'} temperature"><span class="deg">°C</span></div>
+      <button class="mini ghost" data-act="sensor" title="Fill from the probe on the stand">Probe</button>
+    </div>
+    <div class="rows">
+      <div class="rowh"><span></span><span>Mass ${esc(S.unit)}</span><span>Raw counts</span><span>°C</span><span></span><span></span></div>
+      ${P.points.length?P.points.map(p=>rowHTML(p,ph)).join(''):`<div class="empty">${load?'Add the first weight, then capture once it settles.':'Mirror the loading weights, or add them one at a time.'}</div>`}
+    </div>
+    <div class="ph-f">
+      <button class="mini add" data-act="addpt">+ Weight</button>
+      ${load?'':'<button class="mini ghost" data-act="mirror" title="Flip the loading weights: highest first, down to the lowest">Flip loading</button>'}
+    </div>
+  </section>`;
+}
+function runHTML(run,i){
+  return `<article class="panel run ${run.collapsed?'collapsed':''} ${run.include?'':'excluded'}" data-run="${run.id}">
+    <header class="run-h">
+      <button class="icon collapse" data-act="collapse" aria-label="Collapse run" title="Collapse / expand">▸</button>
+      <div class="run-id"><span class="swatch" title="Colour in the fit graph"></span><span class="eyebrow">Run</span><span class="run-no">${p2(i+1)}</span></div>
+      <label class="tplus" title="Minutes after the first run">T+ <input type="number" min="0" data-f="at" step="any" value="${run.atMinutes}" aria-label="Minutes"> min</label>
+      <span class="meta-due"></span>
+      <span class="sp"></span>
+      <span class="chip meta-temp"></span><span class="chip meta-hyst"></span>
+      <label class="small" title="Include this run in the fit"><input type="checkbox" data-f="include" ${run.include?'checked':''}> in fit</label>
+      <button class="icon danger" data-act="delrun" aria-label="Delete run" title="Delete run">✕</button>
+    </header>
+    <div class="run-b">
+      ${PH.map(ph=>phaseHTML(run,ph)).join('')}
+      <div class="run-note"><input data-f="note" value="${esc(run.note)}" placeholder="Notes for this run (stand condition, ambient, anything odd)" aria-label="Run notes"></div>
+    </div>
+  </article>`;
+}
+function renderRuns(focusSel){
+  runsEl.innerHTML=S.runs.length?S.runs.map(runHTML).join(''):
+    '<div class="panel empty" style="text-align:center;padding:26px">No runs yet. Add one to start calibrating.</div>';
+  for(const run of S.runs) refreshRunMeta(run);
+  refreshSensorButtons(); derive();
+  if(focusSel){ const el=runsEl.querySelector(focusSel); if(el){ el.focus(); el.select&&el.select(); } }
+}
+const runEl=id=>runsEl.querySelector(`[data-run="${id}"]`);
+
+function refreshRunMeta(run){
+  const el=runEl(run.id); if(!el) return;
+  const f=lastFit;
+  const temps=PH.map(ph=>phaseTemp(run,ph));
+  const tc=el.querySelector('.meta-temp');
+  tc.innerHTML=temps.some(t=>t!=null)?`<b>${temps[0]!=null?temps[0].toFixed(1):'—'}</b> → <b>${temps[1]!=null?temps[1].toFixed(1):'—'}</b> °C`:'';
+  const h=f&&f.ok?hysteresis(run,f.A):null;
+  el.querySelector('.meta-hyst').innerHTML=h!=null?`hyst <b>${h.toFixed(2)}</b> ${esc(S.unit)}`:'';
+  for(const ph of PH){
+    const c=el.querySelector(`[data-ph="${ph}"] .ph-count`), P=run[ph].points;
+    c.textContent=P.length?`${P.filter(p=>p.raw!=null).length}/${P.length}`:'';
+  }
+  refreshDue(run);
+}
+function refreshDue(run){
+  const el=runEl(run.id); if(!el) return;
+  const d=el.querySelector('.meta-due'), st=runState(run);
+  d.className='meta-due';
+  if(st==='done'){ d.textContent='Complete'; d.classList.add('done'); return; }
+  if(!S.clockStartedAt){ d.textContent=st==='part'?'In progress':''; return; }
+  const dm=run.atMinutes*60-(Date.now()-S.clockStartedAt)/1000;   // seconds until due
+  const fmt=s=>{s=Math.abs(Math.round(s));return (s>=3600?Math.floor(s/3600)+':':'')+p2(Math.floor(s/60)%60)+':'+p2(s%60);};
+  if(dm>0){ d.textContent='Due in '+fmt(dm); }
+  else if(dm>-300){ d.textContent='Run now'; d.classList.add('act'); }
+  else { d.textContent='Overdue '+fmt(dm); d.classList.add('late'); }
+}
+
+// ----- flight-plan timeline -----
+function renderTimeline(){
+  const tl=$('#tl'); const runs=S.runs;
+  $('#plan_n').innerHTML=`${runs.length}<small>${runs.filter(runDone).length} complete</small>`;
+  if(!runs.length){ tl.innerHTML=''; return; }
+  const mins=runs.map(r=>r.atMinutes), lo=Math.min(...mins), hi=Math.max(...mins), span=hi-lo;
+  const pos=m=>span>0?(4+92*(m-lo)/span):50;
+  const ico=`<div class="tl-axis"></div>`;
+  const nodes=runs.map((r,i)=>{
+    const st=r.include?runState(r):'off';
+    return `<button class="tl-node ${st}" style="left:${pos(r.atMinutes)}%" data-goto="${r.id}" title="Run ${i+1} · T+${r.atMinutes} min">
+      <span class="tl-dot">${i+1}</span><span class="tl-lab">T+${r.atMinutes}</span></button>`;
+  }).join('');
+  tl.innerHTML=ico+nodes+`<div class="tl-now" id="tlnow"></div>`;
+  refreshNow();
+}
+function refreshNow(){
+  const now=$('#tlnow'); if(!now) return;
+  if(!S.clockStartedAt||!S.runs.length){ now.style.display='none'; return; }
+  const mins=S.runs.map(r=>r.atMinutes), lo=Math.min(...mins), hi=Math.max(...mins), span=hi-lo;
+  const em=(Date.now()-S.clockStartedAt)/60000;
+  const pct=span>0?Math.max(0,Math.min(100,4+92*(em-lo)/span)):50;
+  now.style.left=pct+'%'; now.style.display='block';
+}
+$('#tl').addEventListener('click',e=>{
+  const b=e.target.closest('[data-goto]'); if(!b) return;
+  const run=S.runs.find(r=>r.id===b.dataset.goto); if(!run) return;
+  if(run.collapsed){ run.collapsed=false; runEl(run.id).classList.remove('collapsed'); commit(); }
+  const el=runEl(run.id); el.scrollIntoView({block:'nearest'});
+  el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+});
+
+// ----- fit panel -----
+let lastFit=null, fitMode='fit';
+function derive(){
+  lastFit=fit();
+  const f=lastFit, u=S.unit||'g';
+  document.querySelectorAll('.unitl').forEach(e=>e.textContent=u);
+  $('#f_k').textContent   = f.ok?fmtNum(f.A,4):'--';
+  $('#f_zero').textContent= f.ok?fmtNum(f.B,2):'--';
+  $('#f_r2').textContent  = f.ok?f.r2.toFixed(6):'--';
+  $('#f_rms').textContent = f.ok?fmtNum(f.rms,3)+' '+u:'--';
+  let hmax=null; if(f.ok) for(const r of S.runs){ if(!r.include) continue; const h=hysteresis(r,f.A); if(h!=null&&(hmax==null||h>hmax)) hmax=h; }
+  $('#f_hyst').textContent= hmax!=null?hmax.toFixed(3)+' '+u:'--';
+  $('#f_n').textContent   = f.n?`${f.n} · ${f.runs}`:'--';
+  if(f.ok && f.tempOk){
+    const gPerC=-f.k/f.tA;
+    $('#f_tc').textContent  = `${gPerC>=0?'+':''}${gPerC.toFixed(2)} ${u}/°C`;
+    $('#f_tc').title        = `${f.k.toFixed(2)} counts/°C · joint R²=${f.tempR2.toFixed(6)} (n=${f.tempN}) vs mass-only R²=${f.r2.toFixed(6)} - weakly constrained unless your runs span several °C`;
+    $('#f_tref').textContent= f.tempRef.toFixed(1)+'°C';
+  } else {
+    $('#f_tc').textContent='--'; $('#f_tc').title=''; $('#f_tref').textContent='--';
+  }
+  $('#usetempfit').disabled = !(f.ok && f.tempOk);
+  $('#usetempwrap').classList.toggle('mut', !(f.ok && f.tempOk));
+  $('#apply').disabled    = !f.ok;
+  $('#testit').disabled   = !f.ok && !testMode;
+  if(testMode && !f.ok) setTest(false);
+  for(const run of S.runs) refreshRunMeta(run);
+  renderTimeline(); renderRunMenu(); renderScopePills(); drawCal();
+}
+// Runs-for-Test/Apply pills: a quick, always-visible way to pick which
+// calibration run(s) feed the fit that "Test it" / "Apply to board" use,
+// without digging into each run card. Toggles the same run.include flag
+// as the card's own "in fit" checkbox, so the two stay in sync either way.
+function renderScopePills(){
+  const el=$('#scopepills'); if(!el) return;
+  el.innerHTML=S.runs.map((r,i)=>`<button class="pill" style="--c:${runColor(r)}" data-scope="${r.id}" aria-pressed="${!!r.include}"><i></i>Run ${p2(i+1)}</button>`).join('');
+}
+function setRunInclude(run,val){
+  run.include=val;
+  const card=runEl(run.id);
+  if(card){ card.classList.toggle('excluded',!val); const cb=card.querySelector('[data-f="include"]'); if(cb) cb.checked=val; }
+}
+$('.fitpanel').addEventListener('click',e=>{
+  const sp=e.target.closest('[data-scope]'), sa=e.target.closest('[data-scope-all]');
+  if(sp){ const run=S.runs.find(x=>x.id===sp.dataset.scope); if(run) setRunInclude(run,!run.include); }
+  else if(sa){ const on=sa.dataset.scopeAll==='1'; S.runs.forEach(r=>setRunInclude(r,on)); }
+  else return;
+  commit(); derive();
+});
+document.querySelectorAll('#fitmode button').forEach(b=>b.onclick=()=>{
+  fitMode=b.dataset.m; document.querySelectorAll('#fitmode button').forEach(x=>x.classList.toggle('on',x===b)); drawCal();
+});
+
+const ccv=$('#calchart');
+const RUN_COLORS=['#7cd4ff','#f0b44c','#ff7b9c','#7ee0a1','#b79cff','#ff9f5a','#5fe0d6','#e8e06a'];
+const runColor=run=>RUN_COLORS[Math.max(0,S.runs.indexOf(run))%RUN_COLORS.length];
+
+function renderRunMenu(){
+  const vis=S.runs.filter(r=>!r.hidden).length;
+  $('#runmenulbl').textContent=`Runs ${vis}/${S.runs.length}`;
+  $('#pills').innerHTML=S.runs.map((r,i)=>`<button class="pill ${r.include?'':'nofit'}" style="--c:${runColor(r)}" data-pill="${r.id}" aria-pressed="${!r.hidden}"><i></i>Run ${p2(i+1)}</button>`).join('');
+  document.querySelectorAll('#runs .swatch').forEach(el=>{ const r=S.runs.find(x=>x.id===el.closest('[data-run]').dataset.run); if(r) el.style.setProperty('--c',runColor(r)); });
+}
+function setMenu(open){ $('#runmenu').hidden=!open; $('#runmenubtn').setAttribute('aria-expanded',open); }
+$('#runmenubtn').onclick=e=>{ e.stopPropagation(); setMenu($('#runmenu').hidden); };
+$('#runmenu').addEventListener('click',e=>{
+  e.stopPropagation();
+  const pill=e.target.closest('[data-pill]'), all=e.target.closest('[data-all]');
+  if(pill){ const r=S.runs.find(x=>x.id===pill.dataset.pill); if(r) r.hidden=!r.hidden; }
+  else if(all){ const show=all.dataset.all==='1'; S.runs.forEach(r=>r.hidden=!show); }
+  else return;
+  commit(); renderRunMenu(); drawCal();
+});
+document.addEventListener('click',()=>setMenu(false));
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') setMenu(false); });
+
+function drawCal(){
+  const {x,w,h}=sizeCanvas(ccv), L=40, B=18, T=8, R=10;
+  x.clearRect(0,0,w,h); x.font=MONO;
+  const f=lastFit||fit();
+  if(!f.ok){ x.fillStyle='#4a5767'; x.fillText(f.n?'need two different masses':'capture weights to see the fit',L,h/2); return; }
+  // every captured point of every run that is switched on in the menu (runs outside the fit are drawn faint)
+  const P=[];
+  for(const run of S.runs){ if(run.hidden) continue;
+    for(const ph of PH) for(const p of run[ph].points) if(p.raw!=null&&p.mass!=null) P.push({m:p.mass,r:p.raw,ph,run}); }
+  const all=gather(), mmax=Math.max(1,...all.map(p=>p.m)), mmin=Math.min(0,...all.map(p=>p.m));
+  const yv=p=>fitMode==='fit'?p.r:(p.r-(f.A*p.m+f.B))/f.A;
+  let vals=P.map(yv); if(fitMode==='fit') vals=vals.concat([f.A*mmin+f.B,f.A*mmax+f.B]); else vals.push(0);
+  let lo=Math.min(...vals),hi=Math.max(...vals); if(lo===hi){lo-=1;hi+=1;} const pd=(hi-lo)*.12; lo-=pd; hi+=pd;
+  if(fitMode==='res'){ const a=Math.max(Math.abs(lo),Math.abs(hi)); lo=-a; hi=a; }
+  const X=m=>L+(w-L-R)*(m-mmin)/((mmax-mmin)||1), Y=v=>h-B-(h-B-T)*(v-lo)/((hi-lo)||1);
+  x.strokeStyle='#131c26'; x.lineWidth=1; x.fillStyle='#4a5767';
+  for(let i=0;i<=3;i++){ const v=lo+(hi-lo)*i/3,y=Y(v); x.beginPath();x.moveTo(L,y);x.lineTo(w-R,y);x.stroke();
+    x.fillText(fitMode==='fit'?Math.round(v):v.toFixed(2),2,y+3); }
+  x.fillText(`${mmin} \u2026 ${mmax} ${S.unit}`,L,h-4);
+  if(fitMode==='fit'){ x.strokeStyle='#4a5767'; x.beginPath(); x.moveTo(X(mmin),Y(f.A*mmin+f.B)); x.lineTo(X(mmax),Y(f.A*mmax+f.B)); x.stroke(); }
+  else { x.strokeStyle='#2c3b4e'; x.beginPath(); x.moveTo(L,Y(0)); x.lineTo(w-R,Y(0)); x.stroke(); }
+  if(!P.length){ x.fillStyle='#4a5767'; x.fillText('no runs shown - open the menu',L+8,h/2); return; }
+  for(const p of P){
+    const cx0=X(p.m), cy=Y(yv(p)), c=runColor(p.run);
+    x.globalAlpha=p.run.include?1:.4;
+    if(p.ph==='loading'){ x.fillStyle=c; x.beginPath(); x.arc(cx0,cy,3,0,7); x.fill(); }
+    else { x.strokeStyle=c; x.lineWidth=1.6; x.beginPath(); x.arc(cx0,cy,3.8,0,7); x.stroke(); }
+  }
+  x.globalAlpha=1;
+}
+
+// ===================================================================
+//  Run interactions
+// ===================================================================
+function findCtx(el){
+  const re=el.closest('[data-run]'); if(!re) return {};
+  const run=S.runs.find(r=>r.id===re.dataset.run);
+  const pe=el.closest('[data-ph]'); const ph=pe?pe.dataset.ph:null;
+  const te=el.closest('[data-pt]'); const pt=te&&run&&ph?run[ph].points.find(p=>p.id===te.dataset.pt):null;
+  return {run,ph,pt,re,pe,te};
+}
+function toast(msg,bad){
+  const t=document.createElement('div'); t.className='toast'+(bad?' bad':''); t.textContent=msg; $('#toasts').appendChild(t);
+  setTimeout(()=>t.remove(),bad?5200:3000);
+}
+function askConfirm(title,msg,okLabel='Continue'){
+  return new Promise(res=>{
+    const d=$('#dlg'); $('#dlgt').textContent=title; $('#dlgp').textContent=msg; $('#dlgyes').textContent=okLabel;
+    const done=v=>{ d.close(); res(v); };
+    $('#dlgyes').onclick=()=>done(true); $('#dlgno').onclick=()=>done(false); d.oncancel=()=>res(false);
+    d.showModal();
+  });
+}
+function refreshSensorButtons(){
+  runsEl.querySelectorAll('[data-act="sensor"]').forEach(b=>{ b.disabled=liveTemp==null; b.title=liveTemp==null?'No probe reading - type the temperature in':'Fill from probe ('+liveTemp.toFixed(1)+' °C)'; });
+}
+
+async function capture(ctx){
+  const {run,ph,pt,te}=ctx; const btn=te.querySelector('[data-act="capture"]');
+  btn.disabled=true; btn.textContent='…';
+  try{
+    const ac=new AbortController(); const to=setTimeout(()=>ac.abort(),4000);
+    const r=await(await fetch(api('/capture'),{signal:ac.signal})).json(); clearTimeout(to);
+    pt.raw=r.raw; pt.t=Date.now();
+    const live=(r.tempC!=null&&isFinite(r.tempC))?r.tempC:liveTemp;
+    if(live!=null){ pt.tempC=Math.round(live*10)/10; if(run[ph].tempC==null){ run[ph].tempC=pt.tempC; ctx.pe.querySelector('[data-f="phtemp"]').value=pt.tempC.toFixed(1); } }
+    else pt.tempC=run[ph].tempC;
+    te.classList.add('has'); te.querySelector('[data-pf="raw"]').value=pt.raw;
+    te.querySelector('.ptemp').textContent=pt.tempC!=null?pt.tempC.toFixed(1)+'°':'';
+    btn.textContent='Retake'; commit(); derive();
+  }catch(e){
+    btn.textContent=pt.raw!=null?'Retake':'Capture';
+    toast('No reading from the board. Check the address, or type the raw counts in.',true);
+  }
+  btn.disabled=false;
+}
+
+runsEl.addEventListener('click',async e=>{
+  const b=e.target.closest('[data-act]'); if(!b) return;
+  const ctx=findCtx(b), {run,ph,pt}=ctx; if(!run) return;
+  switch(b.dataset.act){
+    case 'collapse': run.collapsed=!run.collapsed; ctx.re.classList.toggle('collapsed',run.collapsed); commit(); break;
+    case 'delrun': {
+      const has=PH.some(p=>run[p].points.some(q=>q.raw!=null));
+      if(has && !await askConfirm('Delete this run?','Its captured readings will be removed. Export the session first if you may need them.','Delete run')) return;
+      S.runs.splice(S.runs.indexOf(run),1); commit(); renderRuns(); break; }
+    case 'addpt': {
+      const P=run[ph].points, n=P.length;
+      let m=null;
+      if(n>=2&&P[n-1].mass!=null&&P[n-2].mass!=null) m=P[n-1].mass+(P[n-1].mass-P[n-2].mass);
+      const np=newPoint(m); P.push(np); commit(); renderRuns(`[data-run="${run.id}"] [data-ph="${ph}"] [data-pt="${np.id}"] [data-pf="mass"]`); break; }
+    case 'delpt': run[ph].points.splice(run[ph].points.indexOf(pt),1); commit(); renderRuns(); break;
+    case 'capture': capture(ctx); break;
+    case 'mirror': {
+      // Flip, not copy: highest weight first, stepping down to the lowest.
+      // Sorted by mass so it is right whatever order the loading rows were typed in.
+      const masses=[...new Set(run.loading.points.filter(p=>p.mass!=null).map(p=>p.mass))].sort((x,y)=>y-x);
+      if(!masses.length){ toast('Add loading weights first.',true); break; }
+      const old=run.unloading.points, keep=new Set();
+      const next=masses.map(m=>{ const hit=old.find(q=>q.mass===m&&!keep.has(q.id)); if(hit){ keep.add(hit.id); return hit; } return newPoint(m); });
+      const lost=old.filter(q=>!keep.has(q.id)&&q.raw!=null).length;
+      if(lost && !await askConfirm('Replace unloading weights?',`${lost} captured unloading reading(s) don't match any loading weight and will be removed.`,'Replace')) break;
+      run.unloading.points=next; commit(); renderRuns(); break; }
+    case 'sensor':
+      if(liveTemp==null) break;
+      run[ph].tempC=Math.round(liveTemp*10)/10; ctx.pe.querySelector('[data-f="phtemp"]').value=run[ph].tempC.toFixed(1); commit(); refreshRunMeta(run); break;
+  }
+});
+runsEl.addEventListener('input',e=>{
+  const ctx=findCtx(e.target), {run,ph,pt}=ctx; if(!run) return;
+  const f=e.target.dataset.f, pf=e.target.dataset.pf, v=e.target.value;
+  if(pf&&pt){
+    if(pf==='mass') pt.mass=num(v);
+    if(pf==='raw'){ pt.raw=num(v); if(pt.raw!=null&&pt.t==null){ pt.t=Date.now(); pt.tempC=run[ph].tempC; ctx.te.querySelector('.ptemp').textContent=pt.tempC!=null?pt.tempC.toFixed(1)+'°':''; }
+      ctx.te.classList.toggle('has',pt.raw!=null); ctx.te.querySelector('[data-act="capture"]').textContent=pt.raw!=null?'Retake':'Capture'; }
+  }else if(f==='at'){ run.atMinutes=Math.max(0,num(v)??0); }
+  else if(f==='phtemp'){ run[ph].tempC=num(v); }
+  else if(f==='include'){ run.include=e.target.checked; ctx.re.classList.toggle('excluded',!run.include); }
+  else if(f==='note'){ run.note=v; }
+  else return;
+  commit(); derive();
+});
+$('#addrun').onclick=()=>{
+  // Clock running: stamp the run with the minutes actually elapsed. Otherwise
+  // fall back to previous run + default interval. Either can be edited after.
+  let at;
+  if(S.clockStartedAt) at=Math.round((Date.now()-S.clockStartedAt)/600)/100;   // minutes, 2 dp
+  else { const last=S.runs.length?S.runs[S.runs.length-1].atMinutes:-S.defaultInterval; at=last+(S.defaultInterval||30); }
+  const r=newRun(at); S.runs.push(r); commit(); renderRuns();
+  const el=runEl(r.id); el.scrollIntoView({block:'nearest'}); el.classList.add('flash');
+  el.querySelector('[data-pf="mass"]').focus();
+};
+$('#definterval').oninput=e=>{ S.defaultInterval=Math.max(1,num(e.target.value)||30); commit(); };
+
+// ===================================================================
+//  Session: name, unit, clock, export / import / new
+// ===================================================================
+$('#sessname').oninput=e=>{ S.name=e.target.value; commit(); };
+$('#unit').oninput=e=>{ S.unit=(e.target.value||'g').slice(0,7); commit(); renderRuns(); };
+
+function fmtClock(ms){ const s=Math.max(0,Math.floor(ms/1000)); return p2(Math.floor(s/3600))+':'+p2(Math.floor(s/60)%60)+':'+p2(s%60); }
+function tickClock(){
+  const c=$('#clock'), on=!!S.clockStartedAt;
+  c.classList.toggle('run',on); $('#clockbtn').textContent=on?'Reset':'Start';
+  $('#clockt').textContent=on?fmtClock(Date.now()-S.clockStartedAt):'00:00:00';
+  const nb=$('#addrun');
+  nb.textContent=on?`+ New run at T+${(Math.round((Date.now()-S.clockStartedAt)/600)/100).toFixed(2)} min`:'+ New run';
+  if(on){ refreshNow(); for(const r of S.runs) refreshDue(r); }
+}
+$('#clockbtn').onclick=async()=>{
+  if(S.clockStartedAt){ if(!await askConfirm('Reset mission clock?','Runs will no longer show a due time until you start the clock again.','Reset')) return; S.clockStartedAt=null; }
+  else S.clockStartedAt=Date.now();
+  commit(); tickClock(); for(const r of S.runs) refreshDue(r);
+};
+setInterval(tickClock,1000);
+
+function hasData(){ return S.runs.some(r=>PH.some(p=>r[p].points.some(q=>q.raw!=null))); }
+function snapshot(){
+  const f=lastFit||fit();
+  return {...S,format:FORMAT,version:2,exportedAt:Date.now(),
+    board:{countsPerUnit:calCpu,zeroOffset:calZero},
+    fit:f.ok?{countsPerUnit:f.A,zeroOffset:f.B,r2:f.r2,rmsError:f.rms,points:f.n}:null};
+}
+$('#calexport').onclick=()=>{
+  const blob=new Blob([JSON.stringify(snapshot(),null,2)],{type:'application/json'});
+  const d=new Date(), slug=(S.name||'calibration').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'calibration';
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`hopper-${slug}-${d.getFullYear()}${p2(d.getMonth()+1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}.json`;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  toast('Exported '+S.runs.length+' run(s) to JSON');
+};
+$('#calimport').onclick=()=>$('#calfile').click();
+$('#calfile').onchange=e=>{
+  const file=e.target.files[0]; e.target.value=''; if(!file) return;
+  const rd=new FileReader();
+  rd.onload=async()=>{
+    let next;
+    try{ next=sanitize(JSON.parse(rd.result)); }
+    catch(err){ toast('Could not read that file: '+err.message,true); return; }
+    if(hasData() && !await askConfirm('Replace this session?',`"${file.name}" will replace the session in this browser. Export first if you want to keep the current one.`,'Import')) return;
+    S=next; if(!S.runs.length) S.runs.push(newRun(0));
+    persist(); syncSessionUI(); renderRuns(); tickClock();
+    toast(`Imported ${S.runs.length} run(s) from ${file.name}`);
+  };
+  rd.readAsText(file);
+};
+$('#calnew').onclick=async()=>{
+  if(hasData() && !await askConfirm('Start a new session?','The current session will be cleared from this browser. Export it first if you want to keep it.','Start new')) return;
+  S=newSession(); persist(); syncSessionUI(); renderRuns(); tickClock();
+};
+function syncSessionUI(){
+  $('#sessname').value=S.name; $('#unit').value=S.unit; $('#definterval').value=S.defaultInterval;
+}
+
+// ===================================================================
+//  Apply / save / manual
+// ===================================================================
+$('#apply').onclick=async()=>{
+  const f=lastFit; if(!f||!f.ok) return;
+  const useTemp=f.tempOk && $('#usetempfit').checked;
+  const factor=useTemp?f.tA:f.A, offset=useTemp?f.tB:f.B;
+  const q=new URLSearchParams({factor,offset,unit:S.unit||'g',
+    tempCoeff:useTemp?f.k:0, tempRef:useTemp?f.tempRef:0});
+  try{
+    await fetch(api('/setcal?'+q.toString()));
+    $('#calmsg').textContent=`Applied · k=${fmtNum(factor)} · zero=${fmtNum(offset,2)}`
+      +(useTemp?` · temp ${f.k>=0?'+':''}${f.k.toFixed(2)} counts/°C @ ${f.tempRef.toFixed(1)}°C`:' · temp comp off')
+      +' (not yet saved to flash)';
+  }
+  catch(e){ $('#calmsg').textContent='Board did not respond'; }
+};
+$('#testit').onclick=()=>setTest(!testMode);
+$('#savecal').onclick=async()=>{
+  try{ await fetch(api('/savecal')); $('#calmsg').textContent='Saved to flash'; }catch(e){ $('#calmsg').textContent='Board did not respond'; }
+};
+$('#setman').onclick=async()=>{
+  const q=new URLSearchParams();
+  if($('#mcpu').value!=='')  q.append('factor',$('#mcpu').value);
+  if($('#mzero').value!=='') q.append('offset',$('#mzero').value);
+  q.append('unit',S.unit||'g');
+  try{ await fetch(api('/setcal?'+q.toString())); $('#calmsg').textContent='Manual values applied'; }catch(e){ $('#calmsg').textContent='Board did not respond'; }
+};
+
+// ===================================================================
+//  Tare / sim / valve
+// ===================================================================
+$('#tare').onclick=async()=>{
+  if(testMode){
+    // Test it never touches the board - zero its own local correction
+    // instead, same promise as the mode itself ("nothing is sent to the
+    // board"). Without this, taring here always did nothing: the board's
+    // real zeroOffset isn't even part of what Test it displays.
+    if(lastFit && lastFit.ok && liveRaw!=null) testZero=(liveRaw-lastFit.B)/lastFit.A;
+    tFilt=null; tOut=0; hist=[];
+    return;
+  }
+  const b=$('#tare'); b.disabled=true;
+  try{ await fetch(api('/tare')); }catch(e){}
+  hist=[]; b.disabled=false;
+};
+// Ambient temperature for the board's temperature compensation (no onboard
+// probe - TEMP_PIN < 0 - so this is how the board finds out). Sent on
+// change/blur rather than every keystroke.
+$('#ambtemp').addEventListener('change',async()=>{
+  const v=parseFloat($('#ambtemp').value);
+  if(!isFinite(v)) return;
+  try{ await fetch(api('/settemp?c='+encodeURIComponent(v))); }catch(e){}
+});
+$('#armtoggle').onclick=()=>fetch(api('/relay?enable='+(armed?0:1)));
+$('#open').onclick =()=>fetch(api('/relay?state=on'));
+$('#close').onclick=()=>fetch(api('/relay?state=off'));
+$('#fire').onclick =()=>fetch(api('/relay?state=pulse&ms='+($('#pms').value||200)));
+$('#cycle').onclick=()=>{
+  if($('#cycle').textContent==='Stop') fetch(api('/relay?state=off'));
+  else fetch(api('/relay?state=cycle&hz='+($('#phz').value||5)));
+};
+// Collapsed by default (just controls - Arm/Open/Close/Fire/Cycle; valve
+// state stays visible either way) so it doesn't crowd out the calibration
+// panel on short viewports. Remembered per browser.
+const RELAY_LS_KEY='hopper-relay-collapsed';
+function setRelayCollapsed(on){
+  $('.relay').classList.toggle('collapsed',on);
+  $('#relaycollapse').setAttribute('aria-expanded',!on);
+  try{ localStorage.setItem(RELAY_LS_KEY, on?'1':'0'); }catch(e){}
+}
+$('#relaycollapse').onclick=()=>setRelayCollapsed(!$('.relay').classList.contains('collapsed'));
+{ let init=true; try{ const v=localStorage.getItem(RELAY_LS_KEY); if(v!=null) init=v==='1'; }catch(e){} setRelayCollapsed(init); }
+
+// ===================================================================
+//  boot
+// ===================================================================
+addEventListener('resize',()=>{draw();drawCal();});
+new ResizeObserver(()=>{draw();drawCal();}).observe(cv);
+new ResizeObserver(()=>drawCal()).observe(ccv);
+syncSessionUI(); renderRuns(); tickClock(); persist();
+$('#hint').textContent='Capture reads the stable value from the board. Every change autosaves in this browser; Export JSON to share or archive.';
+</script>
+</body></html>

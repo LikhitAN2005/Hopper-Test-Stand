@@ -1,0 +1,162 @@
+{
+  "unit": "g",
+  "countsPerUnit": -99.05849,
+  "zeroOffset": 103421,
+  "points": [
+    {
+      "mass": 0,
+      "raw": 103547,
+      "zero": true
+    },
+    {
+      "mass": 100,
+      "raw": 94067,
+      "zero": false
+    },
+    {
+      "mass": 200,
+      "raw": 84423,
+      "zero": false
+    },
+    {
+      "mass": 300,
+      "raw": 75046,
+      "zero": false
+    },
+    {
+      "mass": 400,
+      "raw": 65324,
+      "zero": false
+    },
+    {
+      "mass": 500,
+      "raw": 56137,
+      "zero": false
+    },
+    {
+      "mass": 600,
+      "raw": 47349,
+      "zero": false
+    },
+    {
+      "mass": 700,
+      "raw": 38183,
+      "zero": false
+    },
+    {
+      "mass": 800,
+      "raw": 28630,
+      "zero": false
+    },
+    {
+      "mass": 900,
+      "raw": 18748,
+      "zero": false
+    },
+    {
+      "mass": 1000,
+      "raw": 14966,
+      "zero": false
+    },
+    {
+      "mass": 1100,
+      "raw": 5542,
+      "zero": false
+    },
+    {
+      "mass": 1200,
+      "raw": -4463,
+      "zero": false
+    },
+    {
+      "mass": 1300,
+      "raw": -14233,
+      "zero": false
+    },
+    {
+      "mass": 1400,
+      "raw": -23877,
+      "zero": false
+    },
+    {
+      "mass": 1500,
+      "raw": -29180,
+      "zero": false
+    },
+    {
+      "mass": 1600,
+      "raw": -38784,
+      "zero": false
+    },
+    {
+      "mass": 1700,
+      "raw": -48077,
+      "zero": false
+    },
+    {
+      "mass": 1800,
+      "raw": -61575,
+      "zero": false
+    },
+    {
+      "mass": 1900,
+      "raw": -71097,
+      "zero": false
+    },
+    {
+      "mass": 2000,
+      "raw": -80112,
+      "zero": false
+    },
+    {
+      "mass": 2100,
+      "raw": -89704,
+      "zero": false
+    },
+    {
+      "mass": 2200,
+      "raw": -100045,
+      "zero": false
+    },
+    {
+      "mass": 2300,
+      "raw": -109823,
+      "zero": false
+    },
+    {
+      "mass": 2400,
+      "raw": -119801,
+      "zero": false
+    },
+    {
+      "mass": 2500,
+      "raw": -129485,
+      "zero": false
+    },
+    {
+      "mass": 2600,
+      "raw": -140025,
+      "zero": false
+    },
+    {
+      "mass": 2700,
+      "raw": -149483,
+      "zero": false
+    },
+    {
+      "mass": 2800,
+      "raw": -159039,
+      "zero": false
+    },
+    {
+      "mass": 2900,
+      "raw": -171060,
+      "zero": false
+    },
+    {
+      "mass": 3000,
+      "raw": -178039,
+      "zero": false
+    }
+  ]
+}
